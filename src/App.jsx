@@ -124,7 +124,7 @@ function App() {
       if (task) {
         try {
           await updateDoc(doc(db, 'tasks', taskId), {
-            subtasks: [...task.subtasks, {
+            subtasks: [...(task.subtasks || []), {
               id: Date.now(),
               text: subtaskText.trim(),
               completed: false
@@ -143,7 +143,7 @@ function App() {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
       try {
-        const updatedSubtasks = task.subtasks.map(subtask =>
+        const updatedSubtasks = (task.subtasks || []).map(subtask =>
           subtask.id === subtaskId
             ? { ...subtask, completed: !subtask.completed }
             : subtask
@@ -161,7 +161,7 @@ function App() {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
       try {
-        const updatedSubtasks = task.subtasks.filter(subtask => subtask.id !== subtaskId);
+        const updatedSubtasks = (task.subtasks || []).filter(subtask => subtask.id !== subtaskId);
         await updateDoc(doc(db, 'tasks', taskId), {
           subtasks: updatedSubtasks
         });
@@ -206,19 +206,20 @@ function App() {
     let csvContent = "Person Name,Task Description,Priority,Due Date,Task Size,Completed Amount,Subtasks Completed,Created Date\n";
     
     completedTasks.forEach(task => {
-      const subtasksCompleted = task.subtasks.length > 0 
-        ? `${task.subtasks.filter(s => s.completed).length}/${task.subtasks.length}`
+      const subtasks = task.subtasks || [];
+      const subtasksCompleted = subtasks.length > 0 
+        ? `${subtasks.filter(s => s.completed).length}/${subtasks.length}`
         : 'N/A';
       
       const row = [
-        task.person,
-        task.task.replace(/,/g, ';'), // Replace commas to avoid CSV issues
-        task.priority,
+        task.person || '',
+        (task.task || '').replace(/,/g, ';'), // Replace commas to avoid CSV issues
+        task.priority || 'N/A',
         task.dueDate || 'N/A',
         task.taskSize || 'N/A',
         task.completed || 'N/A',
         subtasksCompleted,
-        new Date(task.createdAt).toLocaleDateString()
+        task.createdAt ? new Date(task.createdAt).toLocaleDateString() : 'N/A'
       ].join(',');
       
       csvContent += row + "\n";
@@ -239,7 +240,7 @@ function App() {
   };
 
   const getFilteredTasks = () => {
-    let filtered = tasks;
+    let filtered = tasks || [];
 
     if (filter === 'active') {
       filtered = filtered.filter(task => !task.completedStatus);
@@ -249,8 +250,8 @@ function App() {
 
     if (searchQuery.trim()) {
       filtered = filtered.filter(task => 
-        task.person.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.task.toLowerCase().includes(searchQuery.toLowerCase())
+        (task.person || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (task.task || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
@@ -259,10 +260,10 @@ function App() {
 
   const filteredTasks = getFilteredTasks();
   const stats = {
-    total: tasks.length,
-    active: tasks.filter(t => !t.completedStatus).length,
-    completed: tasks.filter(t => t.completedStatus).length,
-    highPriority: tasks.filter(t => t.priority === 'high' && !t.completedStatus).length
+    total: (tasks || []).length,
+    active: (tasks || []).filter(t => !t.completedStatus).length,
+    completed: (tasks || []).filter(t => t.completedStatus).length,
+    highPriority: (tasks || []).filter(t => t.priority === 'high' && !t.completedStatus).length
   };
 
   return (
@@ -476,10 +477,10 @@ function App() {
                       </div>
                     )}
 
-                    {task.subtasks.length > 0 && (
+                    {(task.subtasks || []).length > 0 && (
                       <div className="subtask-progress">
                         <span className="subtask-count">
-                          📝 {task.subtasks.filter(s => s.completed).length}/{task.subtasks.length} subtasks
+                          📝 {(task.subtasks || []).filter(s => s.completed).length}/{(task.subtasks || []).length} subtasks
                         </span>
                       </div>
                     )}
@@ -493,9 +494,9 @@ function App() {
                   </button>
                 </div>
 
-                {task.subtasks.length > 0 && (
+                {(task.subtasks || []).length > 0 && (
                   <div className="subtasks-list">
-                    {task.subtasks.map(subtask => (
+                    {(task.subtasks || []).map(subtask => (
                       <div key={subtask.id} className={`subtask-item ${subtask.completed ? 'completed' : ''}`}>
                         <div className="task-checkbox">
                           <input
