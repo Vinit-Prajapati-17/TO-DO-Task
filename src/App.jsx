@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import { db } from './firebase';
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 function App() {
-  const [tasks, setTasks] = useState(() => {
-    const savedTasks = localStorage.getItem('tasks');
-    return savedTasks ? JSON.parse(savedTasks) : [];
-  });
+  const [tasks, setTasks] = useState([]);
   const [personName, setPersonName] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -17,137 +16,161 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProgress, setEditingProgress] = useState(null);
   const [progressValue, setProgressValue] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // Real-time listener for tasks
   useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const tasksData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTasks(tasksData);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching tasks:', error);
+      setLoading(false);
+    });
 
-  const addTask = (e) => {
+    return () => unsubscribe();
+  }, []);
+
+  const addTask = async (e) => {
     e.preventDefault();
     if (personName.trim() && taskDescription.trim()) {
-      const newTask = {
-        id: Date.now(),
-        person: personName.trim(),
-        task: taskDescription.trim(),
-        priority: priority,
-        dueDate: dueDate,
-        taskSize: taskSize ? parseInt(taskSize) : 0,
-        completed: 0,
-        completedStatus: false,
-        subtasks: [],
-        createdAt: new Date().toISOString()
-      };
-      setTasks([...tasks, newTask]);
-      setPersonName('');
-      setTaskDescription('');
-      setPriority('medium');
-      setDueDate('');
-      setTaskSize('');
+      try {
+        await addDoc(collection(db, 'tasks'), {
+          person: personName.trim(),
+          task: taskDescription.trim(),
+          priority: priority,
+          dueDate: dueDate,
+          taskSize: taskSize ? parseInt(taskSize) : 0,
+          completed: 0,
+          completedStatus: false,
+          subtasks: [],
+          createdAt: new Date().toISOString()
+        });
+        setPersonName('');
+        setTaskDescription('');
+        setPriority('medium');
+        setDueDate('');
+        setTaskSize('');
+      } catch (error) {
+        console.error('Error adding task:', error);
+        alert('Failed to add task. Please check your Firebase configuration.');
+      }
     }
   };
 
-  const updateProgress = (taskId) => {
+  const updateProgress = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     const newCompleted = parseInt(progressValue) || 0;
     
     if (newCompleted >= 0 && newCompleted <= task.taskSize) {
-      setTasks(tasks.map(t => {
-        if (t.id === taskId) {
-          return {
-            ...t,
-            completed: newCompleted,
-            completedStatus: newCompleted >= task.taskSize
-          };
-        }
-        return t;
-      }));
-      setEditingProgress(null);
-      setProgressValue('');
+      try {
+        await updateDoc(doc(db, 'tasks', taskId), {
+          completed: newCompleted,
+          completedStatus: newCompleted >= task.taskSize
+        });
+        setEditingProgress(null);
+        setProgressValue('');
+      } catch (error) {
+        console.error('Error updating progress:', error);
+      }
     }
   };
 
-  const incrementProgress = (taskId, amount) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        const newCompleted = Math.min(task.completed + amount, task.taskSize);
-        return {
-          ...task,
+  const incrementProgress = async (taskId, amount) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      const newCompleted = Math.min(Math.max(task.completed + amount, 0), task.taskSize);
+      try {
+        await updateDoc(doc(db, 'tasks', taskId), {
           completed: newCompleted,
           completedStatus: newCompleted >= task.taskSize
-        };
+        });
+      } catch (error) {
+        console.error('Error updating progress:', error);
       }
-      return task;
-    }));
+    }
   };
 
-  const addSubtask = (taskId) => {
+  const addSubtask = async (taskId) => {
     if (subtaskText.trim()) {
-      setTasks(tasks.map(task => {
-        if (task.id === taskId) {
-          return {
-            ...task,
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        try {
+          await updateDoc(doc(db, 'tasks', taskId), {
             subtasks: [...task.subtasks, {
               id: Date.now(),
               text: subtaskText.trim(),
               completed: false
             }]
-          };
+          });
+          setSubtaskText('');
+          setShowSubtaskInput(null);
+        } catch (error) {
+          console.error('Error adding subtask:', error);
         }
-        return task;
-      }));
-      setSubtaskText('');
-      setShowSubtaskInput(null);
+      }
     }
   };
 
-  const toggleSubtask = (taskId, subtaskId) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        return {
-          ...task,
-          subtasks: task.subtasks.map(subtask =>
-            subtask.id === subtaskId
-              ? { ...subtask, completed: !subtask.completed }
-              : subtask
-          )
-        };
+  const toggleSubtask = async (taskId, subtaskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      try {
+        const updatedSubtasks = task.subtasks.map(subtask =>
+          subtask.id === subtaskId
+            ? { ...subtask, completed: !subtask.completed }
+            : subtask
+        );
+        await updateDoc(doc(db, 'tasks', taskId), {
+          subtasks: updatedSubtasks
+        });
+      } catch (error) {
+        console.error('Error toggling subtask:', error);
       }
-      return task;
-    }));
+    }
   };
 
-  const deleteSubtask = (taskId, subtaskId) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        return {
-          ...task,
-          subtasks: task.subtasks.filter(subtask => subtask.id !== subtaskId)
-        };
+  const deleteSubtask = async (taskId, subtaskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      try {
+        const updatedSubtasks = task.subtasks.filter(subtask => subtask.id !== subtaskId);
+        await updateDoc(doc(db, 'tasks', taskId), {
+          subtasks: updatedSubtasks
+        });
+      } catch (error) {
+        console.error('Error deleting subtask:', error);
       }
-      return task;
-    }));
+    }
   };
 
-  const toggleTask = (id) => {
-    setTasks(tasks.map(task => {
-      if (task.id === id) {
-        const newStatus = !task.completedStatus;
-        return {
-          ...task,
+  const toggleTask = async (id) => {
+    const task = tasks.find(t => t.id === id);
+    if (task) {
+      const newStatus = !task.completedStatus;
+      try {
+        await updateDoc(doc(db, 'tasks', id), {
           completedStatus: newStatus,
           completed: newStatus ? task.taskSize : 0
-        };
+        });
+      } catch (error) {
+        console.error('Error toggling task:', error);
       }
-      return task;
-    }));
+    }
   };
 
-  const deleteTask = (id) => {
-    setTasks(tasks.filter(task => task.id !== id));
-  };
-
-  const clearCompleted = () => {
-    setTasks(tasks.filter(task => !task.completedStatus));
+  const deleteTask = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'tasks', id));
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
   };
 
   const exportToExcel = () => {
@@ -223,8 +246,14 @@ function App() {
 
   return (
     <div className="app">
-      <div className="container">
-        <div className="header">
+      {loading ? (
+        <div className="loading-screen">
+          <div className="loading-spinner"></div>
+          <p>Loading tasks...</p>
+        </div>
+      ) : (
+        <div className="container">
+          <div className="header">
           <h1>⚡ TASK MANAGER</h1>
           <div className="stats-bar">
             <div className="stat-item">
@@ -513,7 +542,8 @@ function App() {
             </span>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
