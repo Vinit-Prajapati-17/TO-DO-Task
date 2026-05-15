@@ -219,6 +219,27 @@ body {
   flex: 2;
 }
 
+/* Date input specific styling */
+input[type="date"] {
+  color-scheme: dark;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: brightness(0) saturate(100%) invert(83%) sepia(49%) saturate(700%) hue-rotate(5deg) brightness(103%) contrast(104%);
+  opacity: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0 4px;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.75;
+}
+
 .input:focus,
 .select:focus {
   outline: none;
