@@ -29,8 +29,20 @@ function App() {
       }));
       setTasks(tasksData);
       setLoading(false);
+      console.log('✅ Firebase connected! Tasks loaded:', tasksData.length);
     }, (error) => {
-      console.error('Error fetching tasks:', error);
+      console.error('❌ Firebase Error:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      
+      // Show user-friendly error
+      if (error.code === 'permission-denied') {
+        alert('⚠️ Firebase Error: Permission denied. Please enable Firestore Database in Firebase Console and set security rules to test mode.');
+      } else if (error.code === 'failed-precondition') {
+        alert('⚠️ Firebase Error: Firestore is not enabled. Please go to Firebase Console → Build → Firestore Database → Create Database');
+      } else {
+        alert('⚠️ Firebase Error: ' + error.message);
+      }
       setLoading(false);
     });
 
@@ -41,6 +53,7 @@ function App() {
     e.preventDefault();
     if (personName.trim() && taskDescription.trim()) {
       try {
+        console.log('📝 Adding task to Firebase...');
         await addDoc(collection(db, 'tasks'), {
           person: personName.trim(),
           task: taskDescription.trim(),
@@ -52,14 +65,22 @@ function App() {
           subtasks: [],
           createdAt: new Date().toISOString()
         });
+        console.log('✅ Task added successfully!');
         setPersonName('');
         setTaskDescription('');
         setPriority('medium');
         setDueDate('');
         setTaskSize('');
       } catch (error) {
-        console.error('Error adding task:', error);
-        alert('Failed to add task. Please check your Firebase configuration.');
+        console.error('❌ Error adding task:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        
+        if (error.code === 'permission-denied') {
+          alert('⚠️ Permission denied! Please check Firebase security rules.\n\nGo to Firebase Console → Firestore Database → Rules and set:\n\nrules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}');
+        } else {
+          alert('Failed to add task: ' + error.message);
+        }
       }
     }
   };
