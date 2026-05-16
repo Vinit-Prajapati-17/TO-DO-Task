@@ -120,9 +120,16 @@ function App() {
     const task = tasks.find(t => t.id === taskId);
     const newCompleted = parseInt(progressValue) || 0;
     if (newCompleted >= 0 && newCompleted <= task.taskSize) {
+      const wasAlreadyDone = task.completedStatus;
+      const nowDone = newCompleted >= task.taskSize;
       try {
-        await updateDoc(doc(db, 'tasks', taskId), { completed: newCompleted, completedStatus: newCompleted >= task.taskSize });
+        await updateDoc(doc(db, 'tasks', taskId), { completed: newCompleted, completedStatus: nowDone });
         setEditingProgress(null); setProgressValue('');
+        if (nowDone && !wasAlreadyDone) {
+          setCelebrationPerson(task.person || 'Team');
+          setShowCelebration(true);
+          setTimeout(() => setShowCelebration(false), 4000);
+        }
       } catch (error) { console.error('Error:', error); }
     }
   };
@@ -131,8 +138,15 @@ function App() {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
       const newCompleted = Math.min(Math.max(task.completed + amount, 0), task.taskSize);
+      const wasAlreadyDone = task.completedStatus;
+      const nowDone = newCompleted >= task.taskSize;
       try {
-        await updateDoc(doc(db, 'tasks', taskId), { completed: newCompleted, completedStatus: newCompleted >= task.taskSize });
+        await updateDoc(doc(db, 'tasks', taskId), { completed: newCompleted, completedStatus: nowDone });
+        if (nowDone && !wasAlreadyDone) {
+          setCelebrationPerson(task.person || 'Team');
+          setShowCelebration(true);
+          setTimeout(() => setShowCelebration(false), 4000);
+        }
       } catch (error) { console.error('Error:', error); }
     }
   };
