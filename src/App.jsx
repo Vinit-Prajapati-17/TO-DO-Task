@@ -34,6 +34,9 @@ function App() {
   const [editPerson, setEditPerson] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editSize, setEditSize] = useState('');
+  const [editPriority, setEditPriority] = useState('medium');
+  const [analyticsDateFilter, setAnalyticsDateFilter] = useState('today'); // 'all','today','week','month'
+  const [analyticsCustomDate, setAnalyticsCustomDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
@@ -190,6 +193,7 @@ function App() {
     setEditPerson(task.person || '');
     setEditDescription(task.task || '');
     setEditSize(task.taskSize ? task.taskSize.toString() : '0');
+    setEditPriority(task.priority || 'medium');
   };
 
   const saveEditTask = async (e) => {
@@ -204,6 +208,7 @@ function App() {
         task: editDescription.trim(),
         taskSize: newSize,
         completed: newCompleted,
+        priority: editPriority,
         completedStatus: newSize > 0 ? newCompleted >= newSize : task.completedStatus
       });
       setEditingTask(null);
@@ -279,8 +284,32 @@ function App() {
   );
 
   // ── Analytics helpers ──────────────────────────────────────────────
+  const applyDateFilter = (arr) => {
+    const now = new Date();
+    if (analyticsDateFilter === 'today') {
+      const s = new Date(now); s.setHours(0,0,0,0);
+      const e = new Date(now); e.setHours(23,59,59,999);
+      return arr.filter(t => { const d = new Date(t.createdAt); return d >= s && d <= e; });
+    }
+    if (analyticsDateFilter === 'week') {
+      const s = new Date(now); s.setDate(s.getDate() - 6); s.setHours(0,0,0,0);
+      return arr.filter(t => new Date(t.createdAt) >= s);
+    }
+    if (analyticsDateFilter === 'month') {
+      const s = new Date(now); s.setDate(s.getDate() - 29); s.setHours(0,0,0,0);
+      return arr.filter(t => new Date(t.createdAt) >= s);
+    }
+    if (analyticsDateFilter === 'custom' && analyticsCustomDate) {
+      const s = new Date(analyticsCustomDate); s.setHours(0,0,0,0);
+      const e = new Date(analyticsCustomDate); e.setHours(23,59,59,999);
+      return arr.filter(t => { const d = new Date(t.createdAt); return d >= s && d <= e; });
+    }
+    return arr;
+  };
+
   const buildAnalytics = (type) => {
-    const all = (tasks || []).filter(t => (t.taskType || 'annotation') === type);
+    const rawAll = (tasks || []).filter(t => (t.taskType || 'annotation') === type);
+    const all = applyDateFilter(rawAll);
     const completed = all.filter(t => t.completedStatus);
     const active = all.filter(t => !t.completedStatus);
     const totalUnits = all.reduce((s, t) => s + (t.taskSize || 0), 0);
@@ -300,6 +329,10 @@ function App() {
       personMap[t.person].doneUnits += (t.completed || 0);
     });
     const persons = Object.values(personMap).sort((a,b) => b.total - a.total);
+    // leaderboard: ranked by doneUnits desc
+    const leaderboard = Object.values(personMap)
+      .map(p => ({ ...p, score: p.doneUnits + p.done * 10 }))
+      .sort((a,b) => b.score - a.score);
     // priority split
     const priorities = {
       high:   all.filter(t => t.priority === 'high').length,
@@ -311,19 +344,22 @@ function App() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
       const label = d.toLocaleDateString('en-IN', { weekday: 'short' });
-      const count = all.filter(t => { const td = new Date(t.createdAt); td.setHours(0,0,0,0); return td.getTime() === d.getTime(); }).length;
+      const count = rawAll.filter(t => { const td = new Date(t.createdAt); td.setHours(0,0,0,0); return td.getTime() === d.getTime(); }).length;
       days.push({ label, count });
     }
     const maxDay = Math.max(...days.map(d => d.count), 1);
     // recent 5 tasks
     const recent = [...all].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
-    return { all, completed, active, totalUnits, doneUnits, completionRate, unitRate, overdue, addedToday, persons, priorities, days, maxDay, recent };
+    return { all, completed, active, totalUnits, doneUnits, completionRate, unitRate, overdue, addedToday, persons, leaderboard, priorities, days, maxDay, recent };
   };
+
+  const MEDAL = ['🥇','🥈','🥉'];
 
   const AnalyticsDashboard = ({ type, accent }) => {
     const d = buildAnalytics(type);
     const label = type === 'annotation' ? 'Annotation' : 'QA';
     const circumference = 2 * Math.PI * 40;
+    const maxScore = d.leaderboard.length ? d.leaderboard[0].score : 1;
     return (
       <div className="analytics-panel">
         <div className="analytics-header">
@@ -448,6 +484,31 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Leaderboard — disabled, re-enable when needed */}
+          {false && (
+            <div className="an-card an-card-wide">
+              <h3 className="an-card-title"><FiAward /> Leaderboard</h3>
+              {d.leaderboard.length === 0 ? <p className="an-empty">No data yet</p> : (
+                <div className="an-leaderboard">
+                  {d.leaderboard.map((p, idx) => (
+                    <div key={p.name} className={`an-lb-row ${idx === 0 ? 'an-lb-gold' : idx === 1 ? 'an-lb-silver' : idx === 2 ? 'an-lb-bronze' : ''}`}>
+                      <span className="an-lb-rank">{idx < 3 ? MEDAL[idx] : `#${idx+1}`}</span>
+                      <span className="an-lb-name"><FiUser style={{opacity:.5}} /> {p.name}</span>
+                      <div className="an-lb-bar-wrap">
+                        <div className="an-lb-bar-track">
+                          <div className="an-lb-bar-fill" style={{width:`${maxScore ? (p.score/maxScore)*100 : 0}%`, background: accent}} />
+                        </div>
+                      </div>
+                      <span className="an-lb-units">{p.doneUnits}<span className="an-lb-unit-label">units</span></span>
+                      <span className="an-lb-tasks">{p.done}/{p.total}<span className="an-lb-unit-label">tasks</span></span>
+                      <span className="an-lb-score" style={{color: accent}}>{p.score}pts</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -482,6 +543,12 @@ function App() {
               <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="password-input edit-textarea" placeholder="Task description" rows={3} />
               <label className="edit-label">Task Size (total units)</label>
               <input type="number" value={editSize} onChange={(e) => setEditSize(e.target.value)} className="password-input" placeholder="Task size" min="0" />
+              <label className="edit-label">Priority</label>
+              <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)} className="password-input edit-select">
+                <option value="low">🟢 Low</option>
+                <option value="medium">🟡 Medium</option>
+                <option value="high">🔴 High</option>
+              </select>
               <div className="modal-buttons">
                 <button type="submit" className="btn-submit">Save Changes</button>
                 <button type="button" onClick={() => setEditingTask(null)} className="btn-cancel-modal">Cancel</button>
@@ -496,7 +563,7 @@ function App() {
         <div className="container">
           <div className="header">
             <div className="header-top">
-              <div className="logo-section"><MdDashboard className="logo-icon" /><h1>Task Manager</h1></div>
+              <div className="logo-section"><MdDashboard className="logo-icon" /><h1>Pixel Task Manager</h1></div>
               <div className="nav-group">
                 <nav className="type-nav">
                   <button className={`type-nav-btn ${taskType === 'annotation' ? 'active' : ''}`} onClick={() => setTaskType('annotation')}>Annotation</button>
@@ -519,8 +586,22 @@ function App() {
           <div className="main-content">
             {taskType === 'analytics' ? (
               <div className="analytics-root">
-                <AnalyticsDashboard type="annotation" accent="#FFD700" />
-                <AnalyticsDashboard type="qa" accent="#60a5fa" />
+                {/* Date Filter Bar */}
+                <div className="an-date-filter-bar">
+                  <span className="an-date-filter-label"><FiCalendar /> Filter by Date:</span>
+                  <div className="an-date-filter-pills">
+                    {[['all','All Time'],['today','Today'],['week','Last 7 Days'],['month','Last 30 Days'],['custom','Custom']].map(([val,lbl]) => (
+                      <button key={val} className={`an-date-pill ${analyticsDateFilter === val ? 'active' : ''}`} onClick={() => setAnalyticsDateFilter(val)}>{lbl}</button>
+                    ))}
+                  </div>
+                  {analyticsDateFilter === 'custom' && (
+                    <input type="date" className="an-date-custom-input" value={analyticsCustomDate} onChange={e => setAnalyticsCustomDate(e.target.value)} />
+                  )}
+                </div>
+                <div className="analytics-panels-row">
+                  <AnalyticsDashboard type="annotation" accent="#FFD700" />
+                  <AnalyticsDashboard type="qa" accent="#60a5fa" />
+                </div>
               </div>
             ) : (
               <>
